@@ -18,6 +18,9 @@
 #include <string>
 #include <vector>
 
+#include <sys/stat.h>
+// #include <iostream>
+// #include <string>
 
 static int p[ BO + BO + 2 ];
 static float g3[ BO + BO + 2 ][ 3 ];
@@ -657,29 +660,12 @@ void calculateStatistics( Raster< float >& dem, double* min, double* max, double
     *stdDev = stdDevValue;
 }
 
-void createPerlinNoiseDEM( std::string outputFilePath, int height, int width ) {
-    Raster< float > dem;
-    if ( !dem.init( height, width ) ) {
-        std::cout << "Failed to allocate memory correctly!" << std::endl;
-        return;
-    }
-    float fre = ( float )randomi( 0, 512 ) / 10;
-    for ( int x = 0; x < height; x++ ) {
-        for ( int y = 0; y < width; y++ ) {
-            float vec2[] = { x / fre, y / fre };
-            dem.at( x, y ) = noise2( vec2 ) * 100;
-        }
-    }
-    dem.NoDataValue = -9999;
-	//保存原始DEM.
-    double min0, max0, mean0, stdDev0;
-    calculateStatistics( dem, &min0, &max0, &mean0, &stdDev0 );
-    int length = outputFilePath.length();
-    std::string path = outputFilePath.substr( 0, length - 4 ) + "_unfilling.tif";
-    WriteGeoTIFF( path.data(), dem.getHeight(), dem.getWidth(), &dem, GDALDataType::GDT_Float32, nullptr, &min0, &max0, &mean0, &stdDev0, -9999 );
-    
-	//readGeoTIFF( path.data(), GDALDataType::GDT_Float32, dem );
-	// dem_filling
+void demfill( Raster <float> dem, std::string outputFilePath ) {
+    // Raster< float > dem;
+    // readGeoTIFF( filename.c_str(), GDALDataType::GDT_Float32, dem );
+    // dem.NoDataValue = -9999;
+    int height = dem.getHeight();
+    int width  = dem.getWidth();
     Flag flag;
     if ( !flag.Init( width, height ) ) {
         std::cout << "Failed to allocate memory for depression-filling !\n" << std::endl;
@@ -725,7 +711,34 @@ void createPerlinNoiseDEM( std::string outputFilePath, int height, int width ) {
     }
     double min, max, mean, stdDev;
     calculateStatistics( dem, &min, &max, &mean, &stdDev );
-    WriteGeoTIFF( outputFilePath.data(), dem.getHeight(), dem.getWidth(), &dem, GDALDataType::GDT_Float32, nullptr, &min, &max, &mean, &stdDev, -9999 );
+    WriteGeoTIFF( outputFilePath.data(), dem.getHeight(), dem.getWidth(), &dem, 
+        GDALDataType::GDT_Float32, nullptr, &min, &max, &mean, &stdDev, -9999 );
+}
+
+void createPerlinNoiseDEM( std::string outputFilePath, int height, int width ) {
+    Raster< float > dem;
+    if ( !dem.init( height, width ) ) {
+        std::cout << "Failed to allocate memory correctly!" << std::endl;
+        return;
+    }
+    float fre = ( float )randomi( 0, 512 ) / 10;
+    for ( int x = 0; x < height; x++ ) {
+        for ( int y = 0; y < width; y++ ) {
+            float vec2[] = { x / fre, y / fre };
+            dem.at( x, y ) = noise2( vec2 ) * 100;
+        }
+    }
+    dem.NoDataValue = -9999;
+	//保存原始DEM.
+    double min0, max0, mean0, stdDev0;
+    calculateStatistics( dem, &min0, &max0, &mean0, &stdDev0 );
+    int length = outputFilePath.length();
+    std::string path = outputFilePath.substr( 0, length - 4 ) + "_unfilling.tif";
+    WriteGeoTIFF( path.data(), dem.getHeight(), dem.getWidth(), &dem, GDALDataType::GDT_Float32, nullptr, &min0, &max0, &mean0, &stdDev0, -9999 );
+    
+    // perform dem_fill at here
+    demfill(dem, outputFilePath);
+	//readGeoTIFF( path.data(), GDALDataType::GDT_Float32, dem );
 }
 
 /*--------sequential flow direction-----------*/
@@ -977,7 +990,8 @@ void PerformAlgorithm( std::string filename, std::string outputname ) {
     for ( int i = 0; i < 6; i++ ) {
         geotransform[ i ] = dem.geoTransforms->at( i );
     }
-    WriteGeoTIFF( outputname.data(), flowdirs.getHeight(), flowdirs.getWidth(), &flowdirs, GDALDataType::GDT_Int32, &geotransform[ 0 ], nullptr, nullptr, nullptr, nullptr, flowdirs.NoDataValue );
+    WriteGeoTIFF( outputname.data(), flowdirs.getHeight(), flowdirs.getWidth(), &flowdirs, 
+        GDALDataType::GDT_Int32, &geotransform[ 0 ], nullptr, nullptr, nullptr, nullptr, flowdirs.NoDataValue );
 }
 
 /*-----------------compare results------------*/
@@ -1005,4 +1019,32 @@ bool comPareResults( std::string seqTif, std::string paraTif ) {
     }
     std::cout << "The two Rasters are the same!" << std::endl;
     return true;
+}
+
+std::string dirname( std::string path ) {
+    size_t pos = path.find_last_of( '/' );
+    return path.substr( 0, pos + 1 );
+}
+
+// https://stackoverflow.com/questions/675039/how-can-i-create-directory-tree-in-c-linux
+void dir_valid( std::string s ) {
+    mode_t mode = 0755;
+    size_t pos = 0;
+    std::string dir;
+    int mdret;
+    // s = dirname( s );
+    if ( s[ s.size() - 1 ] != '/' ) {
+        // force trailing / so we can handle everything in loop
+        s += '/';
+    }
+    while ( ( pos = s.find_first_of( '/', pos ) ) != std::string::npos ) {
+        dir = s.substr( 0, pos++ );
+        if ( dir.size() == 0 )
+            continue;  // if leading / first time is 0 length
+        if ( ( mdret = mkdir( dir.c_str(), mode ) ) && errno != EEXIST ) {
+            // return mdret;
+            return;
+        }
+    }
+    // return mdret;
 }

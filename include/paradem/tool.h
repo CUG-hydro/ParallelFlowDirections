@@ -145,4 +145,7 @@ void PerformAlgorithm( std::string filename, std::string outputname );
 /*---------compare results-----------*/
 bool comPareResults( std::string seqTif, std::string paraTif );
 
+std::string dirname( std::string path );
+void dir_valid( std::string s );
+
 #endif

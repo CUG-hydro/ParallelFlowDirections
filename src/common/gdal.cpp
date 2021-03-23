@@ -57,6 +57,7 @@ bool readGeoTIFF( const char* path, GDALDataType type, Raster< float >& dem ) {
     return true;
 }
 
+// readflowTiFF is the same as readGeoTIFF
 bool readflowTIFF( const char* path, GDALDataType type, Raster< int >& flow ) {
     if ( path == nullptr ) {
         std::cout << "path is nullptr" << std::endl;

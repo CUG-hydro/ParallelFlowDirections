@@ -71,14 +71,24 @@ int main(int argc, char** argv) {
 		std::cout << "Path of DEMs output folder: " << outputtileDEMfolder << std::endl;
 		std::cout << "Path of flow-directions output folder: " << outputPath << std::endl;
 
-		std::cout << "1.------Generate DEM!------" << std::endl;
-		createPerlinNoiseDEM(outputDEMFile, height, width);
+
+		// check directory
+        dir_valid( dirname( outputDEMFile ) );
+        dir_valid( dirname( outputsequentialFlow ) );
+        dir_valid( outputtileDEMfolder );
+        dir_valid( outputPath );
+
+        std::cout << "1.------Generate DEM!------" << std::endl;
+        createPerlinNoiseDEM(outputDEMFile, height, width);
+		
 		//----------sequential Barnes flow direction--------
 		std::cout << "2.------Sequential flow directions!------" << std::endl;
 		PerformAlgorithm(outputDEMFile, outputsequentialFlow);
+
 		//-----------divide tiles--------------------
 		std::cout << "3.------Divided tiles!------" << std::endl;
 		generateTiles(outputDEMFile.c_str(), tileHeight, tileWidth, outputtileDEMfolder.c_str());
+		
 		std::cout << "4.------Parallel computing!------" << std::endl;
 		std::string inputFile = outputtileDEMfolder + "/" + "tileInfo.txt";
 		GridInfo gridInfo;
@@ -104,6 +114,7 @@ int main(int argc, char** argv) {
 		//-----------compare  results---------------
 		std::cout << "6.------Compare results!------" << std::endl;
 		comPareResults(outputsequentialFlow, outputFile);
+
 		timer_master.stop();
 		std::cout << "Total wall-time = " << timer_master.elapsed() << "s" << std::endl;
 	}

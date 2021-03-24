@@ -91,26 +91,31 @@ int main(int argc, char** argv) {
 		
 		std::cout << "4.------Parallel computing!------" << std::endl;
 		std::string inputFile = outputtileDEMfolder + "/" + "tileInfo.txt";
-		GridInfo gridInfo;
+		
 		Timer timer_master;
 		timer_master.start();
 		Timer timer_overall;
 		timer_overall.start();
+		
+		GridInfo gridInfo;
 		std::vector< TileInfo > tileInfos;
 		readTXTInfo(inputFile, tileInfos, gridInfo);
-		gridInfo.inputFolder = outputtileDEMfolder;
+		// gridInfo.inputFolder = outputtileDEMfolder;
 		gridInfo.outputFolder = outputPath;
+
 		timer_overall.stop();
 		std::cerr << "Preparer time = " << timer_overall.elapsed() << "s" << std::endl;
 		ObjectFactory objectFactory;
 		hostProcess(gridInfo, tileInfos, &objectFactory);
 		std::cout << "5.------Merge images!-----" << std::endl;
-		gridInfo.grandHeight = height;
-		gridInfo.grandWidth = width;
+		
+		// gridInfo.grandHeight = height;
+		// gridInfo.grandWidth = width;
 		gridInfo.tileHeight = tileHeight;
 		gridInfo.tileWidth = tileWidth;
-		std::string outputFile = outputPath + "/merge.tif";
+		std::string outputFile = outputPath + "/merge.tif"; // merge directions
 		mergeTiles(gridInfo, outputFile.c_str());
+		
 		//-----------compare  results---------------
 		std::cout << "6.------Compare results!------" << std::endl;
 		comPareResults(outputsequentialFlow, outputFile);

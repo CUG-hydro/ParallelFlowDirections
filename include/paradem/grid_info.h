@@ -20,6 +20,8 @@ public:
     int tileHeight, tileWidth;                                  // tile dimensions
     int gridHeight, gridWidth;                                  // number of tiles along rows and cols
     int grandHeight, grandWidth;                                // total rows and cols in the grid
+    int *heights, *widths;
+    // int* heights[gridHeight], widths[gridWidth];
     std::string inputFolder, outputFolder, intermediateFolder;  // three folders
 public:
     GridInfo() = default;

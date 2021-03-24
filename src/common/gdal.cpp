@@ -29,6 +29,42 @@ bool WriteGeoTIFF( const char* path, int height, int width, void* pData, GDALDat
     return true;
 }
 
+GridSize gdalinfo( const char* path ) {
+    GridSize size;
+
+    GDALAllRegister();
+    CPLSetConfigOption( "GDAL_FILENAME_IS_UTF8", "NO" );
+    GDALDataset* poDataset = ( GDALDataset* )GDALOpen( path, GA_ReadOnly );
+    if ( poDataset == NULL ) {
+        return size;
+    }
+    size.height = poDataset->GetRasterYSize();
+    size.width  = poDataset->GetRasterXSize();
+    // GDALRasterBand* poBand;
+    // poBand = poDataset->GetRasterBand( 1 );
+    // std::cout << size.width << size.height << std::endl;
+    return size;
+}
+
+GDALDataType guess_GDALDataType( const char* path ) {
+    if ( path == nullptr ) {
+        std::cout << "path is nullptr" << std::endl;
+    }
+    GDALDataset* poDataset;
+    GDALAllRegister();
+    CPLSetConfigOption( "GDAL_FILENAME_IS_UTF8", "NO" );
+    poDataset = ( GDALDataset* )GDALOpen( path, GA_ReadOnly );
+    if ( poDataset == NULL ) {
+        return GDT_Unknown;
+    }
+    GDALRasterBand* poBand;
+    poBand = poDataset->GetRasterBand( 1 );
+
+    GDALDataType type = poBand->GetRasterDataType();
+    GDALClose( ( GDALDatasetH )poDataset );
+    return type;
+}
+
 bool readGeoTIFF( const char* path, GDALDataType type, Raster< float >& dem ) {
     if ( path == nullptr ) {
         std::cout << "path is nullptr" << std::endl;
@@ -42,6 +78,8 @@ bool readGeoTIFF( const char* path, GDALDataType type, Raster< float >& dem ) {
     }
     GDALRasterBand* poBand;
     poBand = poDataset->GetRasterBand( 1 );
+    type = poBand->GetRasterDataType();  // overwrite GDALDataType
+
     dem.geoTransforms = std::make_shared< std::vector< double > >( std::vector< double >( 6 ) );
     poDataset->GetGeoTransform( &dem.geoTransforms->at( 0 ) );
     if ( !dem.init( poBand->GetYSize(), poBand->GetXSize() ) ) {

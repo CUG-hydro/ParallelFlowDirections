@@ -37,6 +37,70 @@ static void BuildAwayGradient( Raster< int >& flowdirs, Raster< int32_t >& flat_
 static void BuildTowardsCombinedGradient( Raster< int >& flowdirs, Raster< int32_t >& flat_mask, std::deque< GridCell > edges, std::vector< int >& flat_height, Raster< int32_t >& labels );
 static int d8_masked_FlowDir( Raster< int32_t >& flat_mask, Raster< int32_t >& labels, const int row, const int col );
 
+
+std::string dirname( std::string path ) {
+    size_t pos = path.find_last_of( '/' );
+    return path.substr( 0, pos + 1 );
+}
+
+// https://stackoverflow.com/questions/675039/how-can-i-create-directory-tree-in-c-linux
+void dir_valid( std::string s ) {
+    mode_t mode = 0755;
+    size_t pos = 0;
+    std::string dir;
+    int mdret;
+    // s = dirname( s );
+    if ( s[ s.size() - 1 ] != '/' ) {
+        // force trailing / so we can handle everything in loop
+        s += '/';
+    }
+    while ( ( pos = s.find_first_of( '/', pos ) ) != std::string::npos ) {
+        dir = s.substr( 0, pos++ );
+        if ( dir.size() == 0 )
+            continue;  // if leading / first time is 0 length
+        if ( ( mdret = mkdir( dir.c_str(), mode ) ) && errno != EEXIST ) {
+            // return mdret;
+            return;
+        }
+    }
+    // return mdret;
+}
+
+void tileSize(std::vector< TileInfo >& tileInfos, GridInfo& gridInfo ){
+    const size_t max_row_size = gridInfo.gridHeight;
+    const size_t max_col_size = gridInfo.gridWidth;
+
+    gridInfo.heights = new int[max_row_size]; 
+    gridInfo.widths = new int[max_col_size];
+
+    int grandHeight = 0, grandWidth = 0;
+    for ( size_t tileCol = 0; tileCol < max_col_size; tileCol++ ) {
+        for ( size_t tileRow = 0; tileRow < max_row_size; tileRow++ ) {
+            TileInfo tileInfo = tileInfos[ tileRow * max_col_size + tileCol ];
+            if ( !tileInfo.nullTile ) {
+                gridInfo.widths[tileCol] = tileInfo.width;
+                grandWidth += gridInfo.widths[tileCol];
+                break;
+            }
+        }
+    }
+
+    for ( size_t tileRow = 0; tileRow < max_row_size; tileRow++ ) {
+        for ( size_t tileCol = 0; tileCol < max_col_size; tileCol++ ) {
+            TileInfo tileInfo = tileInfos[ tileRow * max_col_size + tileCol ];
+            if ( !tileInfo.nullTile ) {
+                // std::cout << tileInfo.height << std::endl;
+                gridInfo.heights[ tileRow ] = tileInfo.height;
+                grandHeight += gridInfo.heights[tileRow];
+                break;
+            }
+        }
+    }
+    gridInfo.grandHeight = grandHeight;
+    gridInfo.grandWidth = grandWidth;
+    return;
+}
+
 bool readTXTInfo( std::string filePathTXT, std::vector< TileInfo >& tileInfos, GridInfo& gridInfo ) {
     std::vector< std::vector< std::string > > fgrid;
     // Open file
@@ -48,7 +112,6 @@ bool readTXTInfo( std::string filePathTXT, std::vector< TileInfo >& tileInfos, G
     if ( !fin_layout.good() ) {
         throw std::runtime_error( "Problem opening layout file '" + filePathTXT + "'" );
         return false;
-    
 	}   
     while ( fin_layout ) {
         // Get a new line from the file.
@@ -73,9 +136,7 @@ bool readTXTInfo( std::string filePathTXT, std::vector< TileInfo >& tileInfos, G
     if ( !fin_layout.eof() ) {
         throw std::runtime_error( "Failed to read the entire layout file!" );
         return false;
-    
 	}
-        
 
     // Let's find the longest row
     auto max_col_size = fgrid.front().size();
@@ -90,7 +151,9 @@ bool readTXTInfo( std::string filePathTXT, std::vector< TileInfo >& tileInfos, G
     auto max_row_size = fgrid.size();
     gridInfo.gridHeight = max_row_size;
     gridInfo.gridWidth = max_col_size;
+    gridInfo.inputFolder = dirname(filePathTXT);
     tileInfos.resize( max_row_size * max_col_size );
+
     for ( size_t tileRow = 0; tileRow < max_row_size; tileRow++ ) {
         for ( size_t tileCol = 0; tileCol < max_col_size; tileCol++ ) {
             TileInfo tileInfo;
@@ -100,13 +163,21 @@ bool readTXTInfo( std::string filePathTXT, std::vector< TileInfo >& tileInfos, G
             else {
                 tileInfo.filename = fgrid[ tileRow ][ tileCol ];
                 tileInfo.nullTile = false;
+
+                // read tile size at here
+                GridSize size = gdalinfo(tileInfo.filename.c_str());
+                tileInfo.height = size.height;
+                tileInfo.width  = size.width;
             }
             tileInfo.gridRow = tileRow;
             tileInfo.gridCol = tileCol;
             tileInfos[ tileRow * max_col_size + tileCol ] = tileInfo;
         }
     }
+    tileSize(tileInfos, gridInfo);
 
+    // 32767, -7992
+    // 根据最长的行与列确定 grandHeight and grandWidth
     for ( size_t tileRow = 0; tileRow < max_row_size; tileRow++ ) {
         for ( size_t tileCol = 0; tileCol < max_col_size; tileCol++ ) {
             if ( tileInfos[ tileRow * max_col_size + tileCol ].nullTile ) {
@@ -137,7 +208,6 @@ bool readTXTInfo( std::string filePathTXT, std::vector< TileInfo >& tileInfos, G
             }
         }
     }
-
 	return true;
 }
 
@@ -150,6 +220,8 @@ bool generateTiles( const char* filePath, int tileHeight, int tileWidth, const c
         throw std::runtime_error( "Could not open file '" + inputFilePath + "' to get dimensions." );
     GDALRasterBand* band = fin->GetRasterBand( 1 );
     GDALDataType type = band->GetRasterDataType();
+    auto nodatavalue = band->GetNoDataValue();
+
     // file type is assumed to be float
     int grandHeight = band->GetYSize();
     int grandWidth = band->GetXSize();
@@ -169,14 +241,15 @@ bool generateTiles( const char* filePath, int tileHeight, int tileWidth, const c
                 GDALClose( ( GDALDatasetH )fin );
                 return false;
             }
-            auto returnValue = band->RasterIO( GF_Read, tileWidth * tileCol, tileHeight * tileRow, tile.getWidth(), tile.getHeight(), ( void* )&tile, tile.getWidth(), tile.getHeight(), type, 0, 0 );
+            auto returnValue = band->RasterIO( GF_Read, tileWidth * tileCol, tileHeight * tileRow, 
+                tile.getWidth(), tile.getHeight(), ( void* )&tile, tile.getWidth(), tile.getHeight(), type, 0, 0 );
             if ( returnValue != CE_None ) {
                 throw std::runtime_error( "An error occured while trying to read '" + path + " 'into RAM with GDAL." );
             }
-	    std::vector< double > tileGeotransform( geotransform );
+            std::vector< double > tileGeotransform( geotransform );
             tileGeotransform[ 0 ] = geotransform[ 0 ] + tileWidth * tileCol * geotransform[ 1 ] + tileHeight * tileRow * geotransform[ 2 ];
             tileGeotransform[ 3 ] = geotransform[ 3 ] + tileHeight * tileRow * geotransform[ 5 ] + tileWidth * tileCol * geotransform[ 4 ];
-            WriteGeoTIFF( path.data(), tile.getHeight(), tile.getWidth(), &tile, type, &tileGeotransform[ 0 ], nullptr, nullptr, nullptr, nullptr, tile.NoDataValue );
+            WriteGeoTIFF( path.data(), tile.getHeight(), tile.getWidth(), &tile, type, &tileGeotransform[ 0 ], nullptr, nullptr, nullptr, nullptr, nodatavalue );
         }
     }
     GDALClose( ( GDALDatasetH )fin );
@@ -202,20 +275,25 @@ bool generateTiles( const char* filePath, int tileHeight, int tileWidth, const c
 bool mergeTiles( GridInfo& gridInfo, const char* outputFilePath ) {
     int grandHeight = gridInfo.grandHeight;
     int grandWidth = gridInfo.grandWidth;
-    int gridHeight = gridInfo.gridHeight;
-    int gridWidth = gridInfo.gridWidth;
     int tileHeight = gridInfo.tileHeight;
     int tileWidth = gridInfo.tileWidth;
+
+    int gridHeight = gridInfo.gridHeight;
+    int gridWidth = gridInfo.gridWidth;
+
     std::string inputFolder = gridInfo.outputFolder;
+    
+    // Improve tiles at here
     Raster< float > tiles;
     if ( !tiles.init( grandHeight, grandWidth ) )
         return false;
+    
     std::vector< double > geotransform( 6 );
     for ( int tileRow = 0; tileRow < gridHeight; tileRow++ ) {
         for ( int tileCol = 0; tileCol < gridWidth; tileCol++ ) {
             std::string fileName = inputFolder + "/" + std::to_string( tileRow ) + "_" + std::to_string( tileCol ) + "flowdir.tif";
             Raster< float > tile;
-            if ( !readGeoTIFF( fileName.data(), GDALDataType::GDT_Int32, tile ) ) {
+            if ( !readGeoTIFF( fileName.data(), GDALDataType::GDT_Int32, tile ) ) { // datatype not use
                 std::cout << fileName << " not exist!" << std::endl;
                 return false;
             }
@@ -235,9 +313,68 @@ bool mergeTiles( GridInfo& gridInfo, const char* outputFilePath ) {
             }
         }
     }
-    WriteGeoTIFF( outputFilePath, tiles.getHeight(), tiles.getWidth(), &tiles, GDALDataType::GDT_Int32, &geotransform[ 0 ], nullptr, nullptr, nullptr, nullptr, tiles.NoDataValue );
+    WriteGeoTIFF( outputFilePath, tiles.getHeight(), tiles.getWidth(), &tiles, 
+        GDALDataType::GDT_Int32, &geotransform[ 0 ], nullptr, nullptr, nullptr, nullptr, tiles.NoDataValue );
     return true;
 }
+
+bool merge_tiles( std::vector< TileInfo >& tileInfos, GridInfo& gridInfo, const char* outputFilePath ) {
+    int grandHeight = gridInfo.grandHeight;
+    int grandWidth = gridInfo.grandWidth;
+    // int tileHeight = gridInfo.tileHeight;
+    // int tileWidth = gridInfo.tileWidth;
+    int gridHeight = gridInfo.gridHeight;
+    int gridWidth = gridInfo.gridWidth;
+
+    std::string inputFolder = gridInfo.inputFolder;    
+    // Improve tiles at here
+    Raster< float > tiles;
+    if ( !tiles.init( grandHeight, grandWidth ) ) return false;
+    std::vector< double > geotransform( 6 );
+
+    GDALDataType datatype;
+    bool known_datatype = false;
+    // auto nodatavalue; nodatavalue should add at here
+
+        int startRow = 0;
+    for ( int tileRow = 0; tileRow < gridHeight; tileRow++ ) {
+        int startCol = 0;
+        for ( int tileCol = 0; tileCol < gridWidth; tileCol++ ) {
+            
+            TileInfo tileInfo = tileInfos[ tileRow * gridWidth + tileCol ];  // max_col_size = gridWidth
+            // std::string fileName = inputFolder + "/" + std::to_string( tileRow ) + "_" + std::to_string( tileCol ) + "flowdir.tif";
+            if (tileInfo.nullTile) continue;
+            std::string fileName = tileInfo.filename; // inputFolder + "/" + 
+            if (!known_datatype) datatype = guess_GDALDataType(fileName.c_str());
+
+            Raster< float > tile;
+            // type is overwrited
+            if ( !readGeoTIFF( fileName.data(), datatype, tile ) ) { //GDALDataType::GDT_Int32
+                std::cout << fileName << " not exist!" << std::endl;
+                return false;
+            }
+            if ( tileRow == 0 && tileCol == 0 ) {
+                for ( int i = 0; i < 6; i++ ) {
+                    geotransform[ i ] = tile.geoTransforms->at( i );
+                }
+            }
+
+            int height = tile.getHeight();
+            int width = tile.getWidth();
+            for ( int row = 0; row < height; row++ ) {
+                for ( int col = 0; col < width; col++ ) {
+                    tiles.at( startRow + row, startCol + col ) = tile.at( row, col );
+                }
+            }
+            startCol += gridInfo.widths[ tileRow ];
+        }
+        startRow += gridInfo.heights[ tileRow ];
+    }
+    WriteGeoTIFF( outputFilePath, tiles.getHeight(), tiles.getWidth(), &tiles, 
+        datatype, &geotransform[ 0 ], nullptr, nullptr, nullptr, nullptr, tiles.NoDataValue );
+    return true;
+}
+
 
 // this file is yet to be tested
 bool createDiffFile( const char* filePath1, const char* filePath2, const char* diffFilePath ) {
@@ -660,7 +797,8 @@ void calculateStatistics( Raster< float >& dem, double* min, double* max, double
     *stdDev = stdDevValue;
 }
 
-void demfill( Raster <float> dem, std::string outputFilePath ) {
+template < class T > 
+void demfill( Raster <T> dem, std::string outputFilePath ) {
     // Raster< float > dem;
     // readGeoTIFF( filename.c_str(), GDALDataType::GDT_Float32, dem );
     // dem.NoDataValue = -9999;
@@ -748,16 +886,16 @@ int d8_FlowDir( Raster< float >& dem, const int row, const int col ) {
     int height = dem.getHeight();
     int width = dem.getWidth();
     // border cells
-    if ( (row == 0) && (col == 0) ) {
+    if ( ( row == 0 ) && ( col == 0 ) ) {
         return 5;
     }
-    else if ( (row == 0) && (col == width - 1) ) {
+    else if ( ( row == 0 ) && ( col == width - 1 ) ) {
         return 7;
     }
-    else if ( (row == height - 1) && (col == width - 1) ) {
+    else if ( ( row == height - 1 ) && ( col == width - 1 ) ) {
         return 1;
     }
-    else if ( (row == height - 1) && (col == 0) ) {
+    else if ( ( row == height - 1 ) && ( col == 0 ) ) {
         return 3;
     }
     else if ( row == 0 ) {
@@ -775,7 +913,7 @@ int d8_FlowDir( Raster< float >& dem, const int row, const int col ) {
     for ( int n = 0; n < 8; n++ ) {
         int iRow = dem.getRow( n, row );
         int iCol = dem.getCol( n, col );
-        if ( dem.at( iRow, iCol ) < minimum_elevation || (dem.at( iRow, iCol ) == minimum_elevation && flowdir > -1 && flowdir % 2 == 1 && n % 2 == 0 )) {
+        if ( dem.at( iRow, iCol ) < minimum_elevation || ( dem.at( iRow, iCol ) == minimum_elevation && flowdir > -1 && flowdir % 2 == 1 && n % 2 == 0 ) ) {
             minimum_elevation = dem.at( iRow, iCol );
             flowdir = n;
         }
@@ -1012,39 +1150,12 @@ bool comPareResults( std::string seqTif, std::string paraTif ) {
     for ( int row = 0; row < h1; row++ ) {
         for ( int col = 0; col < w1; col++ ) {
             if ( seqFlowdirections.at( row, col ) != paraFlowdirections.at( row, col ) ) {
-                std::cout << "--------The value in " << row << "," << col << "do not agree!--------" << std::endl;
+                std::cout << "[x] x, y not equal at [" << row << "," << col << "]: " << 
+                    seqFlowdirections.at( row, col ) << ", " << paraFlowdirections.at( row, col ) << std::endl;
                 return false;
             }
         }
     }
     std::cout << "The two Rasters are the same!" << std::endl;
     return true;
-}
-
-std::string dirname( std::string path ) {
-    size_t pos = path.find_last_of( '/' );
-    return path.substr( 0, pos + 1 );
-}
-
-// https://stackoverflow.com/questions/675039/how-can-i-create-directory-tree-in-c-linux
-void dir_valid( std::string s ) {
-    mode_t mode = 0755;
-    size_t pos = 0;
-    std::string dir;
-    int mdret;
-    // s = dirname( s );
-    if ( s[ s.size() - 1 ] != '/' ) {
-        // force trailing / so we can handle everything in loop
-        s += '/';
-    }
-    while ( ( pos = s.find_first_of( '/', pos ) ) != std::string::npos ) {
-        dir = s.substr( 0, pos++ );
-        if ( dir.size() == 0 )
-            continue;  // if leading / first time is 0 length
-        if ( ( mdret = mkdir( dir.c_str(), mode ) ) && errno != EEXIST ) {
-            // return mdret;
-            return;
-        }
-    }
-    // return mdret;
 }

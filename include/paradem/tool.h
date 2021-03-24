@@ -18,6 +18,8 @@
 bool readTXTInfo( std::string filePathTXT, std::vector< TileInfo >& tileInfos, GridInfo& gridInfo );
 bool generateTiles( const char* filePath, int tileHeight, int tileWidth, const char* outputFolder );
 bool mergeTiles( GridInfo& gridInfo, const char* outputFilePath );
+bool merge_tiles( std::vector< TileInfo >& tileInfos, GridInfo& gridInfo, const char* outputFilePath );
+
 bool createDiffFile( const char* filePath1, const char* filePath2, const char* diffFilePath );
 bool readGridInfo( const char* filePath, GridInfo& gridInfo );
 void createTileInfoArray( GridInfo& gridInfo, std::vector< TileInfo >& tileInfos );

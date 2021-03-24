@@ -11,4 +11,12 @@ bool WriteGeoTIFF( const char* path, int height, int width, void* pData, GDALDat
 bool readGeoTIFF( const char* path, GDALDataType type, Raster< float >& dem );
 bool readflowTIFF( const char* path, GDALDataType type, Raster< int >& flow );
 
+typedef struct {
+    int height;
+    int width;
+} GridSize;
+
+GridSize gdalinfo( const char* path );
+GDALDataType guess_GDALDataType( const char* path );
+
 #endif

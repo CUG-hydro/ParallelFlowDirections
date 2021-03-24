@@ -1,3 +1,11 @@
 build/
 Test
 ParallelFlowDir
+
+*.R
+&.cpp
+
+test_data/
+OUTPUT/
+bin/
+tests/
